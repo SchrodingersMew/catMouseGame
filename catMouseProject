@@ -1,0 +1,351 @@
+#include <iostream>
+#include <conio.h> // _kbhit() & _getch();
+#include <windows.h>
+#include "CharredTga.h"
+#include "CharredTga.cpp"
+#include <string>
+#include "colour.hpp"
+
+using namespace std;
+
+HANDLE hConsole;
+SMALL_RECT rectWindow;
+CHAR_INFO* buffScreen;
+
+short nScreenWidth = 320;
+short nScreenHeight = 240;
+int fontw = 4;
+int fonth = fontw;
+
+enum COLOUR {
+	FG_BLACK = 0x0000,
+	FG_DARK_BLUE = 0x0001,
+	FG_DARK_GREEN = 0x0002,
+	FG_DARK_CYAN = 0x0003,
+	FG_DARK_RED = 0x0004,
+	FG_DARK_MAGENTA = 0x0005,
+	FG_DARK_YELLOW = 0x0006,
+	FG_GREY = 0x0007,
+	FG_DARK_GREY = 0x0008,
+	FG_BLUE = 0x0009,
+	FG_GREEN = 0x000A,
+	FG_CYAN = 0x000B,
+	FG_RED = 0x000C,
+	FG_MAGENTA = 0x000D,
+	FG_YELLOW = 0x000E,
+	FG_WHITE = 0x000F,
+	BG_BLACK = 0x0000,
+	BG_DARK_BLUE = 0x0010,
+	BG_DARK_GREEN = 0x0020,
+	BG_DARK_CYAN = 0x0030,
+	BG_DARK_RED = 0x0040,
+	BG_DARK_MAGENTA = 0x0050,
+	BG_DARK_YELLOW = 0x0060,
+	BG_GREY = 0x0070,
+	BG_DARK_GREY = 0x0080,
+	BG_BLUE = 0x0090,
+	BG_GREEN = 0x00A0,
+	BG_CYAN = 0x00B0,
+	BG_RED = 0x00C0,
+	BG_MAGENTA = 0x00D0,
+	BG_YELLOW = 0x00E0,
+	BG_WHITE = 0x00F0,
+};
+enum PIXEL_TYPE
+{
+	PIXEL_SOLID = 0x2588,
+	PIXEL_THREEQUARTERS = 0x2593,
+	PIXEL_HALF = 0x2592,
+	PIXEL_QUARTER = 0x2591,
+};
+
+void clearScreen() {
+	for (int i = 0; i < nScreenWidth * nScreenHeight; i++) {
+		buffScreen[i].Char.UnicodeChar = ' ';
+		buffScreen[i].Attributes = 0x0000;
+	}
+}
+
+void consoleSetup() {
+	hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL); // setup console buffer
+	SetConsoleActiveScreenBuffer(hConsole);
+
+	// set to minimum size so screen buffer can shrink below the actual visual size
+	rectWindow = { 0, 0, 1, 1 };
+	SetConsoleWindowInfo(hConsole, TRUE, &rectWindow);
+
+	COORD coord = { (short)nScreenWidth, (short)nScreenHeight };
+	SetConsoleScreenBufferSize(hConsole, coord);
+
+	// setup console's font so we can get that 'pixel' look
+	CONSOLE_FONT_INFOEX cfi;
+	cfi.cbSize = sizeof(cfi);
+	cfi.nFont = 0;
+	cfi.dwFontSize.X = fontw;
+	cfi.dwFontSize.Y = fonth;
+	cfi.FontFamily = FF_DONTCARE;
+	cfi.FontWeight = FW_NORMAL;
+
+	wcscpy_s(cfi.FaceName, L"Consolas");
+	SetCurrentConsoleFontEx(hConsole, false, &cfi);
+
+	int buffSize = nScreenWidth * nScreenHeight;
+
+	buffScreen = new CHAR_INFO[buffSize];
+	memset(buffScreen, 0, sizeof(CHAR_INFO) * buffSize);
+
+	//screenTextBuff = new short[buffSize];
+	//screenColours = new short[buffSize];
+
+	rectWindow = { 0, 0, (short)nScreenWidth - 1, (short)nScreenHeight - 1 };
+	SetConsoleWindowInfo(hConsole, TRUE, &rectWindow);
+
+	//clearScreen();
+}
+
+auto offset = [&](int xc, int yc) {
+	return (yc * nScreenWidth + xc);
+};
+
+auto pixelDataOffset = [&](int xc, int yc) {
+	return (yc * 8 + xc);
+};
+
+void draw(int x, int y, short displayCharacter = PIXEL_TYPE::PIXEL_SOLID, short color = COLOUR::FG_WHITE) {
+	if (x >= 0 && x < nScreenWidth &&
+		y >= 0 && y < nScreenHeight) {
+		buffScreen[offset(x, y)].Char.UnicodeChar = displayCharacter;
+		buffScreen[offset(x, y)].Attributes = color;
+	}
+}
+
+char LETTER_A[64] = { ' ',' ','X','X','X',' ',' ',' ',
+					  ' ','X','X',' ','X','X',' ',' ',
+				      'X','X',' ',' ',' ','X','X',' ',
+					  'X','X',' ',' ',' ','X','X',' ',
+					  'X','X','X','X','X','X','X',' ',
+					  'X','X',' ',' ',' ','X','X',' ',
+					  'X','X',' ',' ',' ','X','X',' ',
+					  ' ',' ',' ',' ',' ',' ',' ',' ' };
+
+void drawPixelBlock(int px, int py, short color = COLOUR::FG_WHITE) {
+	for (int y = 0; y < 8; ++y) {
+		for (int x = 0; x < 8; ++x) {
+			draw(px * 8 + x, py * 8 + y, PIXEL_TYPE::PIXEL_SOLID, color);
+		}
+	}
+}
+
+void drawCharacterBlock(int px, int py, short displayedCharacter, short color = COLOUR::FG_WHITE) {
+	for (int y = 0; y < 8; ++y) {
+		for (int x = 0; x < 8; ++x) {
+			if (LETTER_A[pixelDataOffset(x, y)] == 'X') {
+				draw(px * 8 + x, py * 8 + y, PIXEL_TYPE::PIXEL_SOLID, color);
+			}
+		}
+	}
+}
+
+void drawCharacterString(int x, int y, string c, short col = COLOUR::FG_WHITE) {
+	for (size_t i = 0; i < c.size(); i++) {
+		draw(x + i, y, c[i], col);
+	}
+}
+
+void drawSplashScreen() {
+	clearScreen();
+	drawCharacterString(10, 10, "Cat and Mouse", COLOUR::FG_RED);
+}
+
+void drawMouse(int x, int y, int mapOffsetX, int mapOffsetY) {
+	drawPixelBlock(x + mapOffsetX, y + mapOffsetY, COLOUR::FG_CYAN);
+}
+
+void drawCat(int x, int y, int mapOffsetX, int mapOffsetY) {
+	drawPixelBlock(x + mapOffsetX, y + mapOffsetY, COLOUR::FG_RED);
+}
+
+void drawCheese(int x, int y, int mapOffsetX, int mapOffsetY) {
+	drawPixelBlock(x + mapOffsetX, y + mapOffsetY, COLOUR::FG_YELLOW);
+}
+
+void drawBorders(int width, int height, int mapOffsetX, int mapOffsetY) {
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			if (y == 0 || y == height - 1 || x == 0 || x == width - 1)
+			{
+				drawPixelBlock(x + mapOffsetX, y + mapOffsetY, COLOUR::FG_GREY);
+			}
+		}
+	}
+}
+
+int getch_noblock() {
+	if (_kbhit())
+		return _getch();
+	else
+		return -1;
+}
+
+int getRandCoordInBorder(int max) {
+	int tmp = rand() % (max - 2);
+	tmp += 1;
+	return tmp;
+}
+
+void resetGame(int& _mouseX, int& _mouseY, int& _catX, int& _catY, int& _cheeseX, int& _cheeseY, int width, int height) {
+	_mouseX = getRandCoordInBorder(width);
+	_mouseY = getRandCoordInBorder(height);
+
+	_catX = getRandCoordInBorder(width);
+	_catY = getRandCoordInBorder(height);
+	// make sure cat doesn't spawn on mouse
+	while (_catX == _mouseX && _catY == _mouseY) {
+		_catX = getRandCoordInBorder(width);
+		_catY = getRandCoordInBorder(height);
+	}
+
+	_cheeseX = getRandCoordInBorder(width);
+	_cheeseY = getRandCoordInBorder(height);
+	while ((_cheeseX == _mouseX && _cheeseY == _mouseY) ||
+		(_cheeseX == _catX && _cheeseY == _catY)) {
+		_cheeseX = getRandCoordInBorder(width);
+		_cheeseY = getRandCoordInBorder(height);
+	}
+}
+
+
+
+void drawGameScreen(int mapWidth, int mapHeight, int mapOffsetX, int mapOffsetY, int CheeseX, int CheeseY, int MouseX, int MouseY, int CatX, int CatY) {
+	clearScreen();
+	drawBorders(mapWidth, mapHeight, mapOffsetX, mapOffsetY);
+	drawCheese(CheeseX, CheeseY, mapOffsetX, mapOffsetY);
+	drawMouse(MouseX, MouseY, mapOffsetX, mapOffsetY);
+	drawCat(CatX, CatY, mapOffsetX, mapOffsetY);
+	drawCharacterBlock(1, 1, 'A', COLOUR::FG_WHITE);
+}
+
+int main() {
+
+	int mapWidth{ 38 };
+	int mapHeight{ 27 };
+	int mapOffsetX{ 1 };
+	int mapOffsetY{ 2 };
+
+	int MouseX, MouseY, CatX, CatY, CheeseX, CheeseY;
+
+	resetGame(MouseX, MouseY, CatX, CatY, CheeseX, CheeseY, mapWidth, mapHeight);
+
+	bool hasStateChange = true; // use to decide if we need to redraw everything
+	bool hasPlayerMove = false;
+	
+	bool runGame = true;
+	bool startGame = false;
+	bool gameOver = false;
+	FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+	while (runGame) { // outside gameloop
+		
+		drawSplashScreen();
+		WriteConsoleOutput(hConsole, buffScreen, { (short)nScreenWidth, (short)nScreenHeight }, { 0,0 }, &rectWindow);
+
+		int inp = getch_noblock();
+
+		if (inp == 13) {
+			startGame = true;
+		}
+		if (inp == 27) runGame = false;
+		
+		while (startGame) { // gameplay loop
+			
+			int keyPress = getch_noblock();
+			if (keyPress != -1) {
+				//cout << keyPress;
+				switch (keyPress) {
+				case 72:  // up
+					if (MouseY - 1 > 0) {
+						MouseY--;
+						hasPlayerMove = true;
+					}
+					break;
+				case 75: // left
+					if (MouseX - 1 > 0) {
+						MouseX--;
+						hasPlayerMove = true;
+					}
+					break;
+				case 80: // down
+					if (MouseY + 1 < mapHeight - 1) {
+						MouseY++;
+						hasPlayerMove = true;
+					}
+					break;
+				case 77: // right
+					if (MouseX + 1 < mapWidth - 1) {
+						MouseX++;
+						hasPlayerMove = true;
+					}
+					break;
+				}
+				hasStateChange = true;
+			}
+
+			if (hasPlayerMove) { // mouse has moved, try and catch with cat
+
+				if (CatX < MouseX) {
+					CatX += rand() % 2; // random if cat can get closer or not so it doesn't feel cheap
+				}
+				else if (CatX > MouseX) {
+					CatX -= rand() % 2; // random if cat can get closer or not so it doesn't feel cheap
+				}
+
+				if (CatY < MouseY) {
+					CatY += rand() % 2; // random if cat can get closer or not so it doesn't feel cheap
+				}
+				else if (CatY > MouseY) {
+					CatY -= rand() % 2; // random if cat can get closer or not so it doesn't feel cheap
+				}
+
+				hasPlayerMove = false;
+			}
+
+			if (hasStateChange) {
+				drawGameScreen(mapWidth, mapHeight, mapOffsetX, mapOffsetY, CheeseX, CheeseY, MouseX, MouseY, CatX, CatY);
+				hasStateChange = false;
+			}
+
+			// check mouse win
+			if (MouseX == CheeseX && MouseY == CheeseY) {
+				drawCharacterString(10, 10, "You Win!", COLOUR::FG_YELLOW);
+				gameOver = true;
+				hasStateChange = true;
+			}
+			else if (CatX == MouseX && CatY == MouseY) {
+				drawCharacterString(3, 10, "You got caught! GAME OVER!", COLOUR::FG_YELLOW);
+				gameOver = true;
+				hasStateChange = true;
+			}
+
+			if (gameOver) {
+				bool newGame = false;
+				FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+
+				while (!newGame) {
+					int inp2 = getch_noblock();
+					if (inp2 == 13) {
+						// reset for new game
+						newGame = true;
+						gameOver = false;
+						startGame = false;
+						runGame = true;
+						hasStateChange = true;
+						resetGame(MouseX, MouseY, CatX, CatY, CheeseX, CheeseY, mapWidth, mapHeight);
+						FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+					}
+				}
+			}
+			WriteConsoleOutput(hConsole, buffScreen, { (short)nScreenWidth, (short)nScreenHeight }, { 0,0 }, &rectWindow);
+		}
+	}
+
+	return 0;
+}
